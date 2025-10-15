@@ -1,7 +1,7 @@
 import warnings
 import pandas as pd
 
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, accuracy_score, precision_score, recall_score, f1_score
 
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
@@ -36,9 +36,22 @@ class FlowerClient(NumPyClient):
         set_model_params(self.model, parameters)
 
         loss = log_loss(self.y_test, self.model.predict_proba(self.X_test))
-        accuracy = self.model.score(self.X_test, self.y_test)
+        # accuracy = self.model.score(self.X_test, self.y_test)
 
-        return loss, len(self.X_test), {"accuracy": accuracy}
+        y_pred = self.model.predict(self.X_test)
+        accuracy = accuracy_score(self.y_test, y_pred)
+        precision = precision_score(self.y_test, y_pred, average="weighted", zero_division=0)
+        recall = recall_score(self.y_test, y_pred, average="weighted", zero_division=0)
+        f1 = f1_score(self.y_test, y_pred, average="weighted", zero_division=0)
+
+        metrics = {
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
+
+        return loss, len(self.X_test), metrics
 
 
 def client_fn(context: Context):
