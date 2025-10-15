@@ -1,40 +1,36 @@
+import pandas as pd
+
 from flwr.common import Context, ndarrays_to_parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
-from fl_ids.task import get_model, get_model_params, set_initial_params, _read_csvs
-from pathlib import Path
-import numpy as np
+from fl_ids.task import get_model, get_model_params, set_initial_params
+
 
 def server_fn(context: Context):
     # Read from config
     num_rounds = context.run_config["num-server-rounds"]
+    dataset_path = context.run_config["dataset-path"]
+    num_rows = context.run_config.get("num-rows", None)
+
+    # Load dataset to get dimensions
+    dataset_df = pd.read_csv(f"{dataset_path}/dataset.csv", index_col=0)
+    labels_df = pd.read_csv(f"{dataset_path}/labels.csv", index_col=0)
+    
+    # Limit rows if specified
+    if num_rows is not None and num_rows < len(dataset_df):
+        dataset_df = dataset_df.iloc[:num_rows]
+        labels_df = labels_df.iloc[:num_rows]
+    
+    n_features = dataset_df.shape[1]
+    n_classes = len(labels_df.iloc[:, 0].unique())
 
     # Create LogisticRegression Model
     penalty = context.run_config["penalty"]
     local_epochs = context.run_config["local-epochs"]
     model = get_model(penalty, local_epochs)
 
-    # Try to infer n_features and n_classes from dataset if path is provided
-    dataset_path = Path(context.run_config.get("dataset-path", "./dataset"))
-    dataset_rows = int(context.run_config.get("dataset-rows", -1))
-
-    n_features = None
-    n_classes = None
-    try:
-        if dataset_path.exists():
-            X, y = _read_csvs(dataset_path)
-            if dataset_rows and dataset_rows > 0:
-                X = X[:dataset_rows]
-                y = y[:dataset_rows]
-            n_features = X.shape[1]
-            n_classes = int(len(np.unique(y)))
-    except Exception:
-        # If inference fails, allow config overrides (or fall back to defaults in set_initial_params)
-        n_features = context.run_config.get("dataset-n-features", None)
-        n_classes = context.run_config.get("dataset-n-classes", None)
-
-    # Setting initial parameters with inferred or configured sizes
-    set_initial_params(model, n_features=n_features, n_classes=n_classes)
+    # Setting initial parameters
+    set_initial_params(model, n_features, n_classes)
 
     initial_parameters = ndarrays_to_parameters(get_model_params(model))
 

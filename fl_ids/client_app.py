@@ -1,7 +1,7 @@
 import warnings
+import pandas as pd
 
 from sklearn.metrics import log_loss
-import numpy as np
 
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
@@ -45,24 +45,25 @@ def client_fn(context: Context):
     partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
 
-    # Read dataset configuration from run_config
-    dataset_path = context.run_config.get("dataset-path", "./dataset")
-    dataset_rows = int(context.run_config.get("dataset-rows", -1))
-    dataset_shuffle = bool(context.run_config.get("dataset-shuffle", True))
-
+    # Load data with configuration
+    dataset_path = context.run_config["dataset-path"]
+    num_rows = context.run_config.get("num-rows", None)
+    
     X_train, X_test, y_train, y_test = load_data(
-        partition_id, num_partitions, dataset_path, dataset_rows, dataset_shuffle
+        partition_id, num_partitions, dataset_path, num_rows
     )
+
+    # Get dataset dimensions for model initialization
+    n_features = X_train.shape[1]
+    n_classes = len(set(y_train))
 
     # Create LogisticRegression Model
     penalty = context.run_config["penalty"]
     local_epochs = context.run_config["local-epochs"]
     model = get_model(penalty, local_epochs)
 
-    # Set initial parameters using actual feature/class sizes
-    n_features = X_train.shape[1] if X_train is not None and len(X_train) > 0 else None
-    n_classes = int(len(np.unique(y_train))) if y_train is not None and len(y_train) > 0 else None
-    set_initial_params(model, n_features=n_features, n_classes=n_classes)
+    # Setting initial parameters
+    set_initial_params(model, n_features, n_classes)
 
     return FlowerClient(model, X_train, X_test, y_train, y_test).to_client()
 
