@@ -12,43 +12,61 @@ from fl_ids.task import (
     set_initial_params,
     set_model_params,
 )
+from fl_ids.adversarial import AdversarialTrainer
 
 
 class FlowerClient(NumPyClient):
-    def __init__(self, model, X_train, X_test, y_train, y_test):
+    def __init__(self, model, X_train, X_test, y_train, y_test, adv_config):
         self.model = model
         self.X_train = X_train
         self.X_test = X_test
         self.y_train = y_train
         self.y_test = y_test
+        
+        # Initialize adversarial trainer
+        self.adversarial_trainer = AdversarialTrainer(
+            model=self.model,
+            attack_type=adv_config["attack_type"],
+            epsilon=adv_config["epsilon"],
+            alpha=adv_config["alpha"],
+            num_iter=adv_config["num_iter"],
+            random_start=adv_config["random_start"],
+        )
 
     def fit(self, parameters, config):
         set_model_params(self.model, parameters)
 
-        # Ignore convergence failure due to low local epochs
+        # Train with adversarial examples
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.model.fit(self.X_train, self.y_train)
+            self.adversarial_trainer.fit_with_adversarial(self.X_train, self.y_train)
 
         return get_model_params(self.model), len(self.X_train), {}
 
     def evaluate(self, parameters, config):
         set_model_params(self.model, parameters)
 
+        # Standard evaluation metrics
         loss = log_loss(self.y_test, self.model.predict_proba(self.X_test))
-        # accuracy = self.model.score(self.X_test, self.y_test)
-
         y_pred = self.model.predict(self.X_test)
         accuracy = accuracy_score(self.y_test, y_pred)
         precision = precision_score(self.y_test, y_pred, average="weighted", zero_division=0)
         recall = recall_score(self.y_test, y_pred, average="weighted", zero_division=0)
         f1 = f1_score(self.y_test, y_pred, average="weighted", zero_division=0)
 
+        # Evaluate robustness against adversarial examples
+        robustness_metrics = self.adversarial_trainer.evaluate_robustness(
+            self.X_test, self.y_test
+        )
+
         metrics = {
             "accuracy": accuracy,
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "clean_accuracy": robustness_metrics["clean_accuracy"],
+            "adversarial_accuracy": robustness_metrics["adversarial_accuracy"],
+            "robustness_gap": robustness_metrics["robustness_gap"],
         }
 
         return loss, len(self.X_test), metrics
@@ -78,7 +96,16 @@ def client_fn(context: Context):
     # Setting initial parameters
     set_initial_params(model, n_features, n_classes)
 
-    return FlowerClient(model, X_train, X_test, y_train, y_test).to_client()
+    # Adversarial training configuration
+    adv_config = {
+        "attack_type": context.run_config.get("adversarial-attack-type", "none"),
+        "epsilon": context.run_config.get("adversarial-epsilon", 0.1),
+        "alpha": context.run_config.get("adversarial-alpha", 0.01),
+        "num_iter": context.run_config.get("adversarial-num-iter", 10),
+        "random_start": context.run_config.get("adversarial-random-start", True),
+    }
+
+    return FlowerClient(model, X_train, X_test, y_train, y_test, adv_config).to_client()
 
 
 # Flower ClientApp
