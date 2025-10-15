@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fl-ids"
+version = "1.0.0"
+description = ""
+license = "Apache-2.0"
+dependencies = [
+    "flwr[simulation]>=1.18.0",
+    "flwr-datasets[vision]>=0.5.0",
+    "scikit-learn>=1.6.1",
+    "pandas>=2.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "namber"
+
+[tool.flwr.app.components]
+serverapp = "fl_ids.server_app:app"
+clientapp = "fl_ids.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 2
+local-epochs = 1
+penalty = "l2"
+dataset-path = "./dataset"
+dataset-rows = 5000
+dataset-shuffle = true
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 3
