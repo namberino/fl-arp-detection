@@ -1,4 +1,6 @@
 import numpy as np
+import torch
+import torch.nn as nn
 from typing import Literal
 
 
@@ -11,6 +13,7 @@ class AdversarialTrainer:
         alpha: float = 0.01,
         num_iter: int = 10,
         random_start: bool = True,
+        device: str = "cpu",
     ):
         self.model = model
         self.attack_type = attack_type
@@ -18,64 +21,80 @@ class AdversarialTrainer:
         self.alpha = alpha
         self.num_iter = num_iter
         self.random_start = random_start
-    
-    def _compute_gradient(self, X, y):
-        # Get predictions
-        probs = self.model.predict_proba(X)
-        
-        # Get coefficients and handle binary vs multi-class
-        coef = self.model.coef_
-        n_classes = len(self.model.classes_)
-        
-        # Create one-hot encoded labels
-        n_samples = len(y)
-        y_onehot = np.zeros((n_samples, n_classes))
-        y_onehot[np.arange(n_samples), y] = 1
-        
-        # Gradient of cross-entropy loss
-        error = probs - y_onehot  # Shape: (n_samples, n_classes)
-        
-        # Handle binary classification (coef shape is (1, n_features))
-        if n_classes == 2 and coef.shape[0] == 1:
-            # For binary classification, sklearn uses single coefficient vector
-            # Convert to 2-class format
-            coef_full = np.vstack([-coef[0], coef[0]])  # Shape: (2, n_features)
-            gradient = error @ coef_full
-        else:
-            # Multi-class classification
-            gradient = error @ coef  # Shape: (n_samples, n_features)
-        
-        return gradient
+        self.device = device
+        self.model.to(device)
+        self.criterion = nn.CrossEntropyLoss()
     
     def fgsm_attack(self, X, y):
-        # Compute gradient
-        gradient = self._compute_gradient(X, y)
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        y_tensor = torch.LongTensor(y).to(self.device)
         
-        # Create adversarial examples
-        X_adv = X + self.epsilon * np.sign(gradient)
+        # Set model to eval mode for consistent attack generation
+        was_training = self.model.training
+        self.model.eval()
         
-        return X_adv
+        X_tensor.requires_grad = True
+        
+        # Forward pass
+        outputs = self.model(X_tensor)
+        loss = self.criterion(outputs, y_tensor)
+        
+        # Backward pass to get gradients w.r.t. input
+        loss.backward()
+        
+        # Get gradient sign
+        gradient_sign = X_tensor.grad.data.sign()
+        
+        # Create adversarial examples (maximize loss by adding gradient)
+        X_adv = X_tensor + self.epsilon * gradient_sign
+        
+        # Restore model mode
+        if was_training:
+            self.model.train()
+        
+        # Detach and return (no gradients needed for adversarial examples)
+        return X_adv.detach().cpu().numpy()
     
     def pgd_attack(self, X, y):
-        X_adv = X.copy()
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        y_tensor = torch.LongTensor(y).to(self.device)
+        
+        # Set model to eval mode for consistent attack generation
+        was_training = self.model.training
+        self.model.eval()
+        
+        X_adv = X_tensor.clone().detach()
         
         # Random initialization
         if self.random_start:
-            X_adv = X_adv + np.random.uniform(-self.epsilon, self.epsilon, X_adv.shape)
-            X_adv = np.clip(X_adv, X - self.epsilon, X + self.epsilon)
+            X_adv = X_adv + torch.empty_like(X_adv).uniform_(-self.epsilon, self.epsilon)
+            X_adv = torch.clamp(X_adv, X_tensor - self.epsilon, X_tensor + self.epsilon)
         
         # Iterative attack
         for _ in range(self.num_iter):
-            # Compute gradient
-            gradient = self._compute_gradient(X_adv, y)
+            X_adv.requires_grad = True
             
-            # Update adversarial examples
-            X_adv = X_adv + self.alpha * np.sign(gradient)
+            # Forward pass
+            outputs = self.model(X_adv)
+            loss = self.criterion(outputs, y_tensor)
             
-            # Project back to epsilon ball
-            X_adv = np.clip(X_adv, X - self.epsilon, X + self.epsilon)
+            # Backward pass
+            loss.backward()
+            
+            # Get gradient sign and update (maximize loss)
+            gradient_sign = X_adv.grad.data.sign()
+            
+            # Detach before update to break computational graph
+            X_adv = X_adv.detach() + self.alpha * gradient_sign
+            
+            # Project back to epsilon ball around original input
+            X_adv = torch.clamp(X_adv, X_tensor - self.epsilon, X_tensor + self.epsilon)
         
-        return X_adv
+        # Restore model mode
+        if was_training:
+            self.model.train()
+        
+        return X_adv.detach().cpu().numpy()
     
     def generate_adversarial_examples(self, X, y):
         if self.attack_type == "fgsm":
@@ -85,29 +104,83 @@ class AdversarialTrainer:
         else:
             return X
     
-    def fit_with_adversarial(self, X, y):
-        if self.attack_type == "none":
-            # No adversarial training
-            self.model.fit(X, y)
-        else:
-            # Generate adversarial examples
-            X_adv = self.generate_adversarial_examples(X, y)
+    def fit_with_adversarial(self, X, y, epochs=1, batch_size=32, learning_rate=0.001):
+        self.model.train()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        
+        # Convert to tensors
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        y_tensor = torch.LongTensor(y).to(self.device)
+        
+        # Create dataset and dataloader
+        dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        # Training loop
+        for epoch in range(epochs):
+            total_loss = 0
+            num_batches = 0
             
-            # Combine clean and adversarial examples
-            X_combined = np.vstack([X, X_adv])
-            y_combined = np.hstack([y, y])
+            for batch_X, batch_y in dataloader:
+                # Zero gradients at the start of each batch
+                optimizer.zero_grad()
+                
+                if self.attack_type == "none":
+                    # Standard training without adversarial examples
+                    X_train = batch_X
+                    y_train = batch_y
+                else:
+                    # Generate adversarial examples for this batch
+                    # This temporarily sets model to eval mode and handles gradients properly
+                    batch_X_np = batch_X.cpu().numpy()
+                    batch_y_np = batch_y.cpu().numpy()
+                    
+                    # Generate adversarial examples (returns detached numpy arrays)
+                    X_adv_np = self.generate_adversarial_examples(batch_X_np, batch_y_np)
+                    
+                    # Convert back to tensors
+                    X_adv = torch.FloatTensor(X_adv_np).to(self.device)
+                    
+                    # Combine clean and adversarial examples
+                    X_train = torch.cat([batch_X, X_adv], dim=0)
+                    y_train = torch.cat([batch_y, batch_y], dim=0)
+                
+                # Forward pass (model is back in training mode)
+                outputs = self.model(X_train)
+                loss = self.criterion(outputs, y_train)
+                
+                # Backward pass and optimization (clean gradients)
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+                num_batches += 1
             
-            # Train on combined dataset
-            self.model.fit(X_combined, y_combined)
+            avg_loss = total_loss / num_batches if num_batches > 0 else 0
+            # print(f"  Epoch {epoch+1}/{epochs}, Avg Loss: {avg_loss:.4f}")
     
     def evaluate_robustness(self, X, y):
-        # Clean accuracy
-        clean_acc = self.model.score(X, y)
+        self.model.eval()
+        
+        with torch.no_grad():
+            # Clean accuracy
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            y_tensor = torch.LongTensor(y).to(self.device)
+            
+            outputs = self.model(X_tensor)
+            _, predicted = torch.max(outputs, 1)
+            clean_acc = (predicted == y_tensor).sum().item() / len(y)
         
         # Adversarial accuracy
         if self.attack_type != "none":
+            # Generate adversarial examples for evaluation
             X_adv = self.generate_adversarial_examples(X, y)
-            adv_acc = self.model.score(X_adv, y)
+            
+            with torch.no_grad():
+                X_adv_tensor = torch.FloatTensor(X_adv).to(self.device)
+                outputs_adv = self.model(X_adv_tensor)
+                _, predicted_adv = torch.max(outputs_adv, 1)
+                adv_acc = (predicted_adv == y_tensor).sum().item() / len(y)
         else:
             adv_acc = clean_acc
         

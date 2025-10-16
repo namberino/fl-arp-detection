@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+import torch
+from fl_ids.model import DNN
 
 
 def load_data_non_iid(
@@ -164,36 +165,17 @@ def load_data(partition_id: int, num_partitions: int, dataset_path: str = "./dat
     return X_train, X_test, y_train, y_test
 
 
-def get_model(penalty: str, local_epochs: int):
-    return LogisticRegression(
-        penalty=penalty,
-        max_iter=local_epochs,
-        warm_start=True,
-        random_state=42,
-    )
-
-
-def get_model_params(model):
-    if model.fit_intercept:
-        params = [
-            model.coef_,
-            model.intercept_,
-        ]
-    else:
-        params = [model.coef_]
-    return params
-
-
-def set_model_params(model, params):
-    model.coef_ = params[0]
-    if model.fit_intercept:
-        model.intercept_ = params[1]
+def get_model(n_features: int, n_classes: int, hidden_sizes=[64, 32]):
+    model = DNN(n_features, n_classes, hidden_sizes)
     return model
 
 
-def set_initial_params(model, n_features: int, n_classes: int):
-    model.classes_ = np.array([i for i in range(n_classes)])
-    
-    model.coef_ = np.zeros((n_classes, n_features))
-    if model.fit_intercept:
-        model.intercept_ = np.zeros((n_classes,))
+def get_model_params(model):
+    return [val.cpu().numpy() for val in model.state_dict().values()]
+
+
+def set_model_params(model, params):
+    params_dict = zip(model.state_dict().keys(), params)
+    state_dict = {k: torch.tensor(v) for k, v in params_dict}
+    model.load_state_dict(state_dict, strict=True)
+    return model
