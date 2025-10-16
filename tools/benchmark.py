@@ -1,4 +1,3 @@
-# centralized_benchmark.py
 import argparse
 import json
 import os
