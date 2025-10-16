@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -129,10 +129,6 @@ def load_data(partition_id: int, num_partitions: int, dataset_path: str = "./dat
     dataset_df = pd.read_csv(f"{dataset_path}/dataset.csv", index_col=0, nrows=num_rows)
     labels_df = pd.read_csv(f"{dataset_path}/labels.csv", index_col=0, nrows=num_rows)
     
-    # if num_rows is not None and num_rows < len(dataset_df):
-    #     dataset_df = dataset_df.iloc[:num_rows]
-    #     labels_df = labels_df.iloc[:num_rows]
-    
     # Combine dataset and labels
     X = dataset_df.values
     y = labels_df.values.ravel()
@@ -164,36 +160,52 @@ def load_data(partition_id: int, num_partitions: int, dataset_path: str = "./dat
     return X_train, X_test, y_train, y_test
 
 
-def get_model(penalty: str, local_epochs: int):
-    return LogisticRegression(
-        penalty=penalty,
+def get_model(hidden_layer_sizes: tuple, activation: str, solver: str, alpha: float, local_epochs: int):
+    return MLPClassifier(
+        hidden_layer_sizes=hidden_layer_sizes,
+        activation=activation,
+        solver=solver,
+        alpha=alpha,
         max_iter=local_epochs,
         warm_start=True,
         random_state=42,
+        learning_rate_init=0.001,
+        batch_size='auto'
     )
 
 
 def get_model_params(model):
-    if model.fit_intercept:
-        params = [
-            model.coef_,
-            model.intercept_,
-        ]
-    else:
-        params = [model.coef_]
+    params = []
+    # Add weights for each layer
+    for layer_weights in model.coefs_:
+        params.append(layer_weights)
+    # Add biases for each layer
+    for layer_biases in model.intercepts_:
+        params.append(layer_biases)
     return params
 
 
 def set_model_params(model, params):
-    model.coef_ = params[0]
-    if model.fit_intercept:
-        model.intercept_ = params[1]
+    # Calculate how many layers we have (each layer has weights and biases)
+    n_layers = len(model.coefs_)
+    
+    # Set weights for each layer
+    for i in range(n_layers):
+        model.coefs_[i] = params[i]
+    
+    # Set biases for each layer
+    for i in range(n_layers):
+        model.intercepts_[i] = params[n_layers + i]
+    
     return model
 
 
 def set_initial_params(model, n_features: int, n_classes: int):
-    model.classes_ = np.array([i for i in range(n_classes)])
+    # MLPClassifier automatically initializes parameters when first fitted
+    # We need to trigger initialization by doing a partial fit
+    # Create dummy data with the right shape
+    dummy_X = np.zeros((1, n_features))
+    dummy_y = np.array([0])
     
-    model.coef_ = np.zeros((n_classes, n_features))
-    if model.fit_intercept:
-        model.intercept_ = np.zeros((n_classes,))
+    # This will initialize the model parameters
+    model.partial_fit(dummy_X, dummy_y, classes=np.arange(n_classes))

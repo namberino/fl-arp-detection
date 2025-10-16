@@ -1,6 +1,6 @@
 import warnings
 import pandas as pd
-
+import numpy as np
 from sklearn.metrics import log_loss, accuracy_score, precision_score, recall_score, f1_score
 
 from flwr.client import ClientApp, NumPyClient
@@ -81,9 +81,6 @@ def client_fn(context: Context):
     dataset_path = context.run_config["dataset-path"]
     num_rows = context.run_config.get("num-rows", None)
     
-    # X_train, X_test, y_train, y_test = load_data(
-    #     partition_id, num_partitions, dataset_path, num_rows
-    # )
     use_non_iid = context.run_config.get("use-non-iid", False)
     
     if use_non_iid:
@@ -107,10 +104,15 @@ def client_fn(context: Context):
     n_features = X_train.shape[1]
     n_classes = len(set(y_train))
 
-    # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
+    # Create MLPClassifier Model
+    hidden_layer_sizes = context.run_config.get("hidden_layer_sizes", "100,50")
+    hidden_layers = tuple(int(i) for i in hidden_layer_sizes.split(','))
+    activation = context.run_config.get("activation", "relu")
+    solver = context.run_config.get("solver", "adam")
+    alpha = context.run_config.get("alpha", 0.0001)
     local_epochs = context.run_config["local-epochs"]
-    model = get_model(penalty, local_epochs)
+    
+    model = get_model(hidden_layers, activation, solver, alpha, local_epochs)
 
     # Setting initial parameters
     set_initial_params(model, n_features, n_classes)

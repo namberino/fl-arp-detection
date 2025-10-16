@@ -27,7 +27,10 @@ clientapp = "fl_ids.client_app:app"
 [tool.flwr.app.config]
 num-server-rounds = 3
 local-epochs = 1
-penalty = "l2"
+hidden_layer_sizes = "100,50"
+activation = "relu"
+solver = "adam"
+alpha = 0.0001 
 dataset-path = "./dataset"
 num-rows = 3000
 use-non-iid = true

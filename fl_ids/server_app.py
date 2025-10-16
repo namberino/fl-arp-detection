@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from typing import List, Tuple, Dict, Optional
 from flwr.common import Context, ndarrays_to_parameters, Metrics
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
@@ -87,10 +88,15 @@ def server_fn(context: Context):
     n_features = dataset_df.shape[1]
     n_classes = len(labels_df.iloc[:, 0].unique())
 
-    # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
+    # Create MLPClassifier Model
+    hidden_layer_sizes = context.run_config.get("hidden_layer_sizes", "100,50")
+    hidden_layers = tuple(int(i) for i in hidden_layer_sizes.split(','))
+    activation = context.run_config.get("activation", "relu")
+    solver = context.run_config.get("solver", "adam")
+    alpha = context.run_config.get("alpha", 0.0001)
     local_epochs = context.run_config["local-epochs"]
-    model = get_model(penalty, local_epochs)
+    
+    model = get_model(hidden_layers, activation, solver, alpha, local_epochs)
 
     # Setting initial parameters
     set_initial_params(model, n_features, n_classes)
