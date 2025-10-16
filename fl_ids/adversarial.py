@@ -25,13 +25,13 @@ class AdversarialTrainer:
         self.model.to(device)
         self.criterion = nn.CrossEntropyLoss()
     
-    def fgsm_attack(self, X, y, training_mode=False):
+    def fgsm_attack(self, X, y):
         X_tensor = torch.FloatTensor(X).to(self.device)
         y_tensor = torch.LongTensor(y).to(self.device)
         
-        # Keep model in training mode if we're doing adversarial training
-        if not training_mode:
-            self.model.eval()
+        # Set model to eval mode for consistent attack generation
+        was_training = self.model.training
+        self.model.eval()
         
         X_tensor.requires_grad = True
         
@@ -39,8 +39,7 @@ class AdversarialTrainer:
         outputs = self.model(X_tensor)
         loss = self.criterion(outputs, y_tensor)
         
-        # Backward pass to get gradients
-        self.model.zero_grad()
+        # Backward pass to get gradients w.r.t. input
         loss.backward()
         
         # Get gradient sign
@@ -49,15 +48,20 @@ class AdversarialTrainer:
         # Create adversarial examples (maximize loss by adding gradient)
         X_adv = X_tensor + self.epsilon * gradient_sign
         
+        # Restore model mode
+        if was_training:
+            self.model.train()
+        
+        # Detach and return (no gradients needed for adversarial examples)
         return X_adv.detach().cpu().numpy()
     
-    def pgd_attack(self, X, y, training_mode=False):
+    def pgd_attack(self, X, y):
         X_tensor = torch.FloatTensor(X).to(self.device)
         y_tensor = torch.LongTensor(y).to(self.device)
         
-        # Keep model in training mode if we're doing adversarial training
-        if not training_mode:
-            self.model.eval()
+        # Set model to eval mode for consistent attack generation
+        was_training = self.model.training
+        self.model.eval()
         
         X_adv = X_tensor.clone().detach()
         
@@ -75,23 +79,28 @@ class AdversarialTrainer:
             loss = self.criterion(outputs, y_tensor)
             
             # Backward pass
-            self.model.zero_grad()
             loss.backward()
             
             # Get gradient sign and update (maximize loss)
             gradient_sign = X_adv.grad.data.sign()
+            
+            # Detach before update to break computational graph
             X_adv = X_adv.detach() + self.alpha * gradient_sign
             
             # Project back to epsilon ball around original input
             X_adv = torch.clamp(X_adv, X_tensor - self.epsilon, X_tensor + self.epsilon)
         
+        # Restore model mode
+        if was_training:
+            self.model.train()
+        
         return X_adv.detach().cpu().numpy()
     
-    def generate_adversarial_examples(self, X, y, training_mode=False):
+    def generate_adversarial_examples(self, X, y):
         if self.attack_type == "fgsm":
-            return self.fgsm_attack(X, y, training_mode)
+            return self.fgsm_attack(X, y)
         elif self.attack_type == "pgd":
-            return self.pgd_attack(X, y, training_mode)
+            return self.pgd_attack(X, y)
         else:
             return X
     
@@ -113,20 +122,21 @@ class AdversarialTrainer:
             num_batches = 0
             
             for batch_X, batch_y in dataloader:
+                # Zero gradients at the start of each batch
+                optimizer.zero_grad()
+                
                 if self.attack_type == "none":
                     # Standard training without adversarial examples
                     X_train = batch_X
                     y_train = batch_y
                 else:
-                    # Generate adversarial examples for this batch with current model weights
-                    # Convert batch to numpy for attack generation
+                    # Generate adversarial examples for this batch
+                    # This temporarily sets model to eval mode and handles gradients properly
                     batch_X_np = batch_X.cpu().numpy()
                     batch_y_np = batch_y.cpu().numpy()
                     
-                    # Generate adversarial examples (model stays in train mode)
-                    X_adv_np = self.generate_adversarial_examples(
-                        batch_X_np, batch_y_np, training_mode=True
-                    )
+                    # Generate adversarial examples (returns detached numpy arrays)
+                    X_adv_np = self.generate_adversarial_examples(batch_X_np, batch_y_np)
                     
                     # Convert back to tensors
                     X_adv = torch.FloatTensor(X_adv_np).to(self.device)
@@ -135,12 +145,11 @@ class AdversarialTrainer:
                     X_train = torch.cat([batch_X, X_adv], dim=0)
                     y_train = torch.cat([batch_y, batch_y], dim=0)
                 
-                # Forward pass
+                # Forward pass (model is back in training mode)
                 outputs = self.model(X_train)
                 loss = self.criterion(outputs, y_train)
                 
-                # Backward pass and optimization
-                optimizer.zero_grad()
+                # Backward pass and optimization (clean gradients)
                 loss.backward()
                 optimizer.step()
                 
@@ -165,7 +174,7 @@ class AdversarialTrainer:
         # Adversarial accuracy
         if self.attack_type != "none":
             # Generate adversarial examples for evaluation
-            X_adv = self.generate_adversarial_examples(X, y, training_mode=False)
+            X_adv = self.generate_adversarial_examples(X, y)
             
             with torch.no_grad():
                 X_adv_tensor = torch.FloatTensor(X_adv).to(self.device)
