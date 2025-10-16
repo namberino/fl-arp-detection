@@ -9,6 +9,7 @@ from fl_ids.task import (
     get_model,
     get_model_params,
     load_data,
+    load_data_non_iid,
     set_initial_params,
     set_model_params,
 )
@@ -80,9 +81,27 @@ def client_fn(context: Context):
     dataset_path = context.run_config["dataset-path"]
     num_rows = context.run_config.get("num-rows", None)
     
-    X_train, X_test, y_train, y_test = load_data(
-        partition_id, num_partitions, dataset_path, num_rows
-    )
+    # X_train, X_test, y_train, y_test = load_data(
+    #     partition_id, num_partitions, dataset_path, num_rows
+    # )
+    use_non_iid = context.run_config.get("use-non-iid", False)
+    
+    if use_non_iid:
+        dirichlet_alpha = context.run_config.get("dirichlet-alpha", 0.5)
+        min_samples_per_class = context.run_config.get("min-samples-per-class", 2)
+        
+        X_train, X_test, y_train, y_test = load_data_non_iid(
+            partition_id, 
+            num_partitions, 
+            dataset_path, 
+            num_rows,
+            dirichlet_alpha=dirichlet_alpha,
+            min_samples_per_class=min_samples_per_class
+        )
+    else:
+        X_train, X_test, y_train, y_test = load_data(
+            partition_id, num_partitions, dataset_path, num_rows
+        )
 
     # Get dataset dimensions for model initialization
     n_features = X_train.shape[1]
