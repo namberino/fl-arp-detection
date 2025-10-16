@@ -30,6 +30,11 @@ local-epochs = 1
 penalty = "l2"
 dataset-path = "./dataset"
 num-rows = 3000
+adversarial-attack-type = "pgd"
+adversarial-epsilon = 0.1
+adversarial-alpha = 0.01
+adversarial-num-iter = 10
+adversarial-random-start = true
 
 [tool.flwr.federations]
 default = "local-simulation"

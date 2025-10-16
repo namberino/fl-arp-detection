@@ -17,15 +17,21 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
+        "clean_accuracy": 0.0,
+        "adversarial_accuracy": 0.0,
+        "robustness_gap": 0.0,
     }
     
     # Weighted average of each metric
     for num_examples, m in metrics:
         weight = num_examples / total_examples
-        aggregated["accuracy"] += m["accuracy"] * weight
-        aggregated["precision"] += m["precision"] * weight
-        aggregated["recall"] += m["recall"] * weight
-        aggregated["f1"] += m["f1"] * weight
+        aggregated["accuracy"] += m.get("accuracy", 0) * weight
+        aggregated["precision"] += m.get("precision", 0) * weight
+        aggregated["recall"] += m.get("recall", 0) * weight
+        aggregated["f1"] += m.get("f1", 0) * weight
+        aggregated["clean_accuracy"] += m.get("clean_accuracy", 0) * weight
+        aggregated["adversarial_accuracy"] += m.get("adversarial_accuracy", 0) * weight
+        aggregated["robustness_gap"] += m.get("robustness_gap", 0) * weight
     
     return aggregated
 
@@ -47,15 +53,23 @@ class CustomFedAvg(FedAvg):
         
         # Print metrics for this round
         if metrics_aggregated:
-            print(f"\n{'='*60}")
+            print(f"\n{'='*70}")
             print(f"Round {server_round} - Global Model Performance")
-            print(f"{'='*60}")
-            print(f"Loss:      {loss_aggregated:.4f}")
-            print(f"Accuracy:  {metrics_aggregated.get('accuracy', 0):.4f}")
-            print(f"Precision: {metrics_aggregated.get('precision', 0):.4f}")
-            print(f"Recall:    {metrics_aggregated.get('recall', 0):.4f}")
-            print(f"F1 Score:  {metrics_aggregated.get('f1', 0):.4f}")
-            print(f"{'='*60}\n")
+            print(f"{'='*70}")
+            print(f"Loss:                    {loss_aggregated:.4f}")
+            print(f"Accuracy:                {metrics_aggregated.get('accuracy', 0):.4f}")
+            print(f"Precision:               {metrics_aggregated.get('precision', 0):.4f}")
+            print(f"Recall:                  {metrics_aggregated.get('recall', 0):.4f}")
+            print(f"F1 Score:                {metrics_aggregated.get('f1', 0):.4f}")
+            
+            # Print adversarial robustness metrics if available
+            if metrics_aggregated.get('adversarial_accuracy', 0) > 0:
+                print(f"\n--- Adversarial Robustness ---")
+                print(f"Clean Accuracy:          {metrics_aggregated.get('clean_accuracy', 0):.4f}")
+                print(f"Adversarial Accuracy:    {metrics_aggregated.get('adversarial_accuracy', 0):.4f}")
+                print(f"Robustness Gap:          {metrics_aggregated.get('robustness_gap', 0):.4f}")
+            
+            print(f"{'='*70}\n")
         
         return loss_aggregated, metrics_aggregated
 
