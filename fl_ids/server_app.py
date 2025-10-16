@@ -4,7 +4,7 @@ from flwr.common import Context, ndarrays_to_parameters, Metrics
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
 from flwr.server.client_proxy import ClientProxy
-from fl_ids.task import get_model, get_model_params, set_initial_params
+from fl_ids.task import get_model, get_model_params
 
 
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
@@ -87,14 +87,13 @@ def server_fn(context: Context):
     n_features = dataset_df.shape[1]
     n_classes = len(labels_df.iloc[:, 0].unique())
 
-    # Create LogisticRegression Model
-    penalty = context.run_config["penalty"]
-    local_epochs = context.run_config["local-epochs"]
-    model = get_model(penalty, local_epochs)
+    # Get model configuration
+    hidden_sizes = tuple(int(i) for i in context.run_config.get("hidden-sizes", "128,64").split(","))
 
-    # Setting initial parameters
-    set_initial_params(model, n_features, n_classes)
+    # Create DNN Model
+    model = get_model(n_features, n_classes, hidden_sizes)
 
+    # Get initial parameters
     initial_parameters = ndarrays_to_parameters(get_model_params(model))
 
     # Define custom strategy with metric aggregation
