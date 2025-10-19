@@ -37,7 +37,7 @@ use-non-iid = true
 dirichlet-alpha = 0.5
 min-samples-per-class = 2
 adversarial-attack-type = "pgd"
-adversarial-epsilon = 0.1
+adversarial-epsilon = 0.3
 adversarial-alpha = 0.01
 adversarial-num-iter = 10
 adversarial-random-start = true
@@ -46,4 +46,4 @@ adversarial-random-start = true
 default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 3
+options.num-supernodes = 5
