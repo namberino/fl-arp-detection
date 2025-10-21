@@ -8,7 +8,7 @@ import argparse
 def visualize_distribution(
     num_partitions: int = 5,
     dataset_path: str = "./dataset",
-    num_rows: int = 3000,
+    num_rows: int = 50000,
     dirichlet_alpha: float = 0.5,
     min_samples_per_class: int = 2,
     compare_iid: bool = True,
@@ -69,8 +69,8 @@ def visualize_distribution(
     n_classes = len(classes)
     
     if compare_iid:
-        fig1 = plt.figure(figsize=(10, 4))
-        fig2 = plt.figure(figsize=(10, 4))
+        fig1 = plt.figure(figsize=(15, 8))
+        fig2 = plt.figure(figsize=(15, 8))
         gs1 = fig1.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
         gs2 = fig2.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
     else:
@@ -80,22 +80,22 @@ def visualize_distribution(
     # Non-IID Bar Chart
     ax1 = fig1.add_subplot(gs1[1, 0])
     plot_stacked_bar(ax1, non_iid_distributions, num_partitions, n_classes, 
-                     f"Non-IID Distribution (α={dirichlet_alpha}) - Sample Counts")
+                     f"Non-IID distribution (α={dirichlet_alpha})")
     
     # Non-IID Heatmap
     ax3 = fig1.add_subplot(gs1[1, 1])
     plot_heatmap(ax3, non_iid_distributions, num_partitions, n_classes,
-                f"Non-IID Distribution Heatmap (α={dirichlet_alpha})")
+                f"Non-IID distribution heatmap (α={dirichlet_alpha})")
     
     # IID comparison
     if compare_iid:
         ax5 = fig2.add_subplot(gs1[1, 0])
         plot_stacked_bar(ax5, iid_distributions, num_partitions, n_classes,
-                        "IID Distribution - Sample Counts")
+                        "IID distribution")
         
         ax6 = fig2.add_subplot(gs1[1, 1])
         plot_heatmap(ax6, iid_distributions, num_partitions, n_classes,
-                    "IID Distribution Heatmap")
+                    "IID distribution heatmap")
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -110,7 +110,6 @@ def visualize_distribution(
 
 
 def plot_stacked_bar(ax, distributions, num_partitions, n_classes, title):
-    """Plot stacked bar chart showing sample counts per class per partition."""
     partitions = [f"Device {i}" for i in range(num_partitions)]
     
     # Prepare data for stacking
@@ -127,16 +126,15 @@ def plot_stacked_bar(ax, distributions, num_partitions, n_classes, title):
                label=f"Class {class_id}", color=colors[class_id], alpha=0.8)
         bottom += data_by_class[class_id]
     
-    ax.set_xlabel("Partition", fontweight='bold')
-    ax.set_ylabel("Number of Samples", fontweight='bold')
-    ax.set_title(title, fontweight='bold')
+    ax.set_xlabel("Partition")
+    ax.set_ylabel("Samples")
+    ax.set_title(title)
     ax.legend(loc='upper right')
     ax.grid(axis='y', alpha=0.3)
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    # plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
 
 
 def plot_percentage_bar(ax, distributions, num_partitions, n_classes, title):
-    """Plot stacked bar chart showing percentage distribution per partition."""
     partitions = [f"Device {i}" for i in range(num_partitions)]
     
     # Calculate percentages
@@ -175,7 +173,6 @@ def plot_percentage_bar(ax, distributions, num_partitions, n_classes, title):
 
 
 def plot_heatmap(ax, distributions, num_partitions, n_classes, title):
-    """Plot heatmap showing class distribution across partitions."""
     # Create matrix for heatmap
     matrix = np.zeros((n_classes, num_partitions))
     
@@ -185,17 +182,16 @@ def plot_heatmap(ax, distributions, num_partitions, n_classes, title):
     
     # Plot heatmap
     sns.heatmap(matrix, annot=True, fmt='.0f', cmap='YlOrRd', 
-                xticklabels=[f"D{i}" for i in range(num_partitions)],
+                xticklabels=[f"Device {i}" for i in range(num_partitions)],
                 yticklabels=[f"Class {i}" for i in range(n_classes)],
                 cbar_kws={'label': 'Sample Count'}, ax=ax)
     
-    ax.set_xlabel("Partition", fontweight='bold')
-    ax.set_ylabel("Class", fontweight='bold')
-    ax.set_title(title, fontweight='bold')
+    ax.set_xlabel("Partition")
+    # ax.set_ylabel("Class")
+    ax.set_title(title)
 
 
 def plot_distribution_stats(ax, distributions, num_partitions, n_classes, title):
-    """Plot distribution statistics and heterogeneity metrics."""
     ax.axis('off')
     
     # Calculate statistics
@@ -266,7 +262,6 @@ def plot_distribution_stats(ax, distributions, num_partitions, n_classes, title)
 
 
 def print_summary_statistics(distributions, num_partitions, n_classes, label):
-    """Print summary statistics to console."""
     print(f"\n{'='*60}")
     print(f"{label} Distribution Summary")
     print(f"{'='*60}")
@@ -301,7 +296,7 @@ def main():
     parser.add_argument(
         "--num-rows",
         type=int,
-        default=3000,
+        default=50000,
         help="Number of rows to load (default: 3000)"
     )
     parser.add_argument(
